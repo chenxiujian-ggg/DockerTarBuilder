@@ -1,0 +1,43 @@
+name: Save perfetto to tar with 64 GB tmpfs
+
+on:
+  workflow_dispatch:
+
+jobs:
+  save:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 把 Docker 根目录挪到外挂盘
+      - name: Mount 64 GB tmpfs and move Docker
+        run: |
+          sudo mkdir -p /mnt/tmpfs
+          sudo mount -t tmpfs -o size=64G tmpfs /mnt/tmpfs
+          sudo systemctl stop docker
+          sudo mv /var/lib/docker /mnt/tmpfs/docker
+          sudo ln -s /mnt/tmpfs/docker /var/lib/docker
+          sudo systemctl start docker
+          df -h
+
+      # 2. 同样把工作目录也放到 tmpfs，防止 /home/runner 爆满
+      - name: Set WORKDIR to tmpfs
+        run: |
+          sudo mkdir -p /mnt/tmpfs/work
+          sudo chmod 777 /mnt/tmpfs/work
+          echo "GITHUB_WORKSPACE=/mnt/tmpfs/work" >> $GITHUB_ENV
+          cd /mnt/tmpfs/work
+          pwd
+
+      # 3. 拉镜像
+      - name: Pull image
+        run: docker pull lianxintao/perfetto:latest
+
+      # 4. save 成纯 tar
+      - name: Docker save
+        run: docker save -o perfetto-latest.tar lianxintao/perfetto:latest
+
+      # 5. 上传制品
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: perfetto-latest-tar
+          path: /mnt/tmpfs/work/perfetto-latest.tar
