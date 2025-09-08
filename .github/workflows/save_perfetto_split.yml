@@ -1,4 +1,4 @@
-name: Split-save 15G image to /mnt
+name: Split-save 15G image to /mnt (free runner)
 
 on:
   workflow_dispatch:
@@ -16,42 +16,50 @@ jobs:
           sudo docker system prune -af --volumes
           df -h
 
-      # 1. 准备脚本（输出目录改到 /mnt）
+      # 1. 先给 /mnt 写权限
+      - name: Prepare /mnt permissions
+        run: |
+          sudo mkdir -p /mnt/split /mnt/work
+          sudo chmod 777 /mnt/split /mnt/work
+
+      # 2. 生成分片脚本（输出目录全用 /mnt）
       - name: Create split-save script
         run: |
-          cat <<'EOF' > split-save.sh
+          cat <<'EOF' > /mnt/work/split-save.sh
+          #!/usr/bin/env bash
           set -e
           IMAGE=$1
-          WORK=/mnt/split          # ← 改到外挂 SSD
-          mkdir -p $WORK
-          # 获取所有层
+          WORK=/mnt/split          # 分片 tar 目录
+          OUT=/mnt/work            # 最终合并目录
+          mkdir -p "$WORK" "$OUT"
+          # 获取所有层（按顺序）
           layers=$(docker manifest inspect $IMAGE 2>/dev/null | jq -r '.layers[].digest' | cut -d: -f2)
           [ -z "$layers" ] && { echo "fall back to local pull"; docker pull $IMAGE; exit 0; }
           i=0
           for layer in $layers; do
             echo "==> pull & save layer $i : sha256:$layer"
             docker pull $IMAGE@sha256:$layer 2>/dev/null || true
-            docker save $IMAGE > $WORK/$i.tar
+            docker save $IMAGE > "$WORK/$i.tar"
             docker image prune -af --filter "until=0s" -f
             i=$((i+1))
           done
           echo "==> concat all splits"
-          cat $WORK/*.tar > /mnt/final.tar
-          echo "final.tar ready at /mnt/final.tar"
+          cat "$WORK"/*.tar > "$OUT/final.tar"
+          echo "final.tar ready at $OUT/final.tar"
           EOF
-          chmod +x split-save.sh
+          chmod +x /mnt/work/split-save.sh
 
-      # 2. 初始 pull
+      # 3. 初始 pull（得到 manifest）
       - name: Initial pull
         run: docker pull ${{ env.IMAGE }}
 
-      # 3. 执行分片 save（输出到 /mnt）
+      # 4. 执行分片 save
       - name: Split save & concat
-        run: ./split-save.sh ${{ env.IMAGE }}
+        run: /mnt/work/split-save.sh ${{ env.IMAGE }}
 
-      # 4. 上传制品（路径指向 /mnt）
+      # 5. 上传制品
       - name: Upload final tar
         uses: actions/upload-artifact@v4
         with:
           name: perfetto-15g-final
-          path: /mnt/final.tar
+          path: /mnt/work/final.tar
