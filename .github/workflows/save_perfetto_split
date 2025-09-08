@@ -1,0 +1,60 @@
+name: Split-save 15G image on free runner
+
+on:
+  workflow_dispatch:
+
+env:
+  IMAGE: lianxintao/perfetto:latest
+
+jobs:
+  split-save:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Maximize disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          sudo docker system prune -af --volumes
+          df -h
+
+      # 1. 准备逐层拉取脚本
+      - name: Create split-save script
+        run: |
+          cat <<'EOF' > split-save.sh
+          set -e
+          IMAGE=$1
+          mkdir -p split
+          # 获取所有层（按顺序）
+          layers=$(docker manifest inspect $IMAGE 2>/dev/null | jq -r '.layers[].digest' | cut -d: -f2)
+          [ -z "$layers" ] && { echo "fall back to local pull"; docker pull $IMAGE; exit 0; }
+          i=0
+          for layer in $layers; do
+            echo "==> pull & save layer $i : sha256:$layer"
+            # 单独拉这层（父层会自动复用）
+            docker pull $IMAGE@sha256:$layer 2>/dev/null || true
+            # 把「当前已下载的所有层」save 出去（第一次只有一层，第二次两层...）
+            docker save $IMAGE > split/$i.tar
+            # 立即清理已 save 的层，只保留最新一小块
+            docker image prune -af --filter "until=0s" -f
+            df -h
+            i=$((i+1))
+          done
+          echo "==> concat all splits"
+          cat split/*.tar > final.tar
+          echo "final.tar ready"
+          EOF
+          chmod +x split-save.sh
+
+      # 2. 先普通 pull（得到 manifest）
+      - name: Initial pull
+        run: docker pull ${{ env.IMAGE }}
+
+      # 3. 执行分片 save
+      - name: Split save & concat
+        run: ./split-save.sh ${{ env.IMAGE }}
+
+      # 4. 上传制品
+      - name: Upload final tar
+        uses: actions/upload-artifact@v4
+        with:
+          name: perfetto-15g-final
+          path: final.tar
