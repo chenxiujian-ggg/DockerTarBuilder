@@ -1,0 +1,33 @@
+name: Save lianxintao/perfetto to tar
+
+on:
+  workflow_dispatch:   # 手动触发
+
+jobs:
+  save:
+    runs-on: ubuntu-latest
+    steps:
+      # 1. 腾出 25+ GB 空间
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf "/usr/local/share/boost"
+          sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+          sudo docker system prune -af --volumes
+          df -h
+
+      # 2. 拉取镜像
+      - name: Pull image
+        run: docker pull lianxintao/perfetto:latest
+
+      # 3. 保存为 .tar（不压缩）
+      - name: Docker save to tar
+        run: docker save -o perfetto-latest.tar lianxintao/perfetto:latest
+
+      # 4. 上传制品
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: perfetto-latest-tar
+          path: perfetto-latest.tar
