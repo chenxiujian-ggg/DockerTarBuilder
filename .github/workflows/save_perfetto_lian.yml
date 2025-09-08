@@ -1,4 +1,4 @@
-name: Save perfetto to tar with 64 GB tmpfs
+name: Save perfetto to tar with 75 GB SSD
 
 on:
   workflow_dispatch:
@@ -7,37 +7,39 @@ jobs:
   save:
     runs-on: ubuntu-latest
     steps:
-      # 1. 把 Docker 根目录挪到外挂盘
-      - name: Mount 64 GB tmpfs and move Docker
+      # 1. 清理系统盘
+      - name: Maximize disk space
         run: |
-          sudo mkdir -p /mnt/tmpfs
-          sudo mount -t tmpfs -o size=64G tmpfs /mnt/tmpfs
-          sudo systemctl stop docker
-          sudo mv /var/lib/docker /mnt/tmpfs/docker
-          sudo ln -s /mnt/tmpfs/docker /var/lib/docker
-          sudo systemctl start docker
+          sudo rm -rf /usr/share/dotnet /opt/ghc /usr/local/share/boost "$AGENT_TOOLSDIRECTORY"
+          sudo docker system prune -af --volumes
           df -h
 
-      # 2. 同样把工作目录也放到 tmpfs，防止 /home/runner 爆满
-      - name: Set WORKDIR to tmpfs
+      # 2. 把 Docker 数据目录移到 /mnt（真实 SSD，非内存）
+      - name: Move Docker to /mnt
         run: |
-          sudo mkdir -p /mnt/tmpfs/work
-          sudo chmod 777 /mnt/tmpfs/work
-          echo "GITHUB_WORKSPACE=/mnt/tmpfs/work" >> $GITHUB_ENV
-          cd /mnt/tmpfs/work
-          pwd
+          sudo systemctl stop docker
+          sudo mv /var/lib/docker /mnt/docker
+          sudo ln -s /mnt/docker /var/lib/docker
+          sudo systemctl start docker
 
-      # 3. 拉镜像
+      # 3. 工作目录也放 /mnt，防止 /home/runner 爆满
+      - name: Set WORKDIR to /mnt
+        run: |
+          sudo mkdir -p /mnt/work
+          sudo chmod 777 /mnt/work
+          echo "GITHUB_WORKSPACE=/mnt/work" >> $GITHUB_ENV
+
+      # 4. 拉镜像（内存峰值 < 2 GB）
       - name: Pull image
         run: docker pull lianxintao/perfetto:latest
 
-      # 4. save 成纯 tar
+      # 5. save
       - name: Docker save
-        run: docker save -o perfetto-latest.tar lianxintao/perfetto:latest
+        run: docker save -o /mnt/work/perfetto-latest.tar lianxintao/perfetto:latest
 
-      # 5. 上传制品
+      # 6. 上传
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
           name: perfetto-latest-tar
-          path: /mnt/tmpfs/work/perfetto-latest.tar
+          path: /mnt/work/perfetto-latest.tar
