@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       image:
-        description: 'Docker image to pull, e.g. prom/prometheus'
+        description: 'Docker image to pull, e.g. prom/prometheus:nightly'
         required: true
         default: 'prom/prometheus'
 
@@ -12,14 +12,27 @@ jobs:
   save:
     runs-on: ubuntu-latest
     steps:
-      # ---------- 0. 解析镜像短名 ----------
-      - name: Parse short name
+      # ---------- 0. 统一解析短名、tag、tarball ----------
+      - name: Parse image name & tag
         id: parse
         run: |
-          # 去掉仓库域名前缀，再取冒号或斜杠后的第一段
-          SHORT=$(echo "${{ github.event.inputs.image }}" | sed -E 's@^.*/@@; s/[:@].*$//')
+          IMG="${{ github.event.inputs.image }}"
+
+          # 去掉仓库域名前缀
+          SHORT=$(echo "$IMG" | sed -E 's@^.*/@@; s/[:@].*$//')
+
+          # 判断是否带 tag
+          if [[ "$IMG" == *":"* ]]; then
+            TAG=$(echo "$IMG" | rev | cut -d: -f1 | rev)
+          else
+            TAG="latest"
+          fi
+
+          TARBALL="${SHORT}-${TAG}.tar"
           echo "short=$SHORT" >> $GITHUB_OUTPUT
-          echo "tarball=${SHORT}-latest.tar" >> $GITHUB_OUTPUT
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "tarball=$TARBALL" >> $GITHUB_OUTPUT
+          echo "artifact=${SHORT}-${TAG}-tar" >> $GITHUB_OUTPUT
 
       # ---------- 1. 清理系统盘 ----------
       - name: Maximize disk space
@@ -56,5 +69,5 @@ jobs:
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: ${{ steps.parse.outputs.short }}-latest-tar
+          name: ${{ steps.parse.outputs.artifact }}
           path: /mnt/work/${{ steps.parse.outputs.tarball }}
