@@ -1,4 +1,4 @@
-name: Save perfetto to tar with 75 GB SSD
+name: Save sglang to tar with 75 GB SSD
 
 on:
   workflow_dispatch:
@@ -31,15 +31,15 @@ jobs:
 
       # 4. 拉镜像（内存峰值 < 2 GB）
       - name: Pull image
-        run: docker pull lianxintao/perfetto:latest
+        run: docker pull lmsysorg/sglang:main-cann8.2.rc1-910b
 
       # 5. save
       - name: Docker save
-        run: docker save -o /mnt/work/perfetto-latest.tar lianxintao/perfetto:latest
+        run: docker save -o /mnt/work/sglang.tar lmsysorg/sglang:main-cann8.2.rc1-910b
 
       # 6. 上传
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: perfetto-latest-tar
-          path: /mnt/work/perfetto-latest.tar
+          name: sglang-latest-tar
+          path: /mnt/work/sglang-latest.tar
