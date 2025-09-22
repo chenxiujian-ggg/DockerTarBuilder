@@ -35,7 +35,7 @@ jobs:
 
       # 5. save
       - name: Docker save
-        run: docker save -o /mnt/work/sglang.tar lmsysorg/sglang:main-cann8.2.rc1-910b
+        run: docker save -o /mnt/work/sglang-latest.tar lmsysorg/sglang:main-cann8.2.rc1-910b
 
       # 6. 上传
       - name: Upload artifact
